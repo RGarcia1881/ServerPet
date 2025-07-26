@@ -1,4 +1,4 @@
-#!/home/raul/Documentos/Code/Python/TT/ServerPet/venv/bin/python
+#!/home/tt2025b031/Documents/Code/TT/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys
