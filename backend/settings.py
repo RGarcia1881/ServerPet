@@ -39,7 +39,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
-    'api'
+    'api',
+    'drf_spectacular',  # For API documentation
 ]
 
 MIDDLEWARE = [
@@ -128,3 +129,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True
 
+# REST Framework settings
+REST_FRAMEWORK = {
+    # YOUR SETTINGS
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'API Dispensador de Mascotas',
+    'DESCRIPTION': 'API REST para controlar dispensadores y gestionar usuarios y mascotas.',
+    'VERSION': '1.0.0',
+    'CONTACT': {
+        'name': 'Raúl García',
+        'email': 'rgb101001@gmail.com',
+        'url': 'https://rb-code-studio.vercel.app/',
+    },
+    # Puedes agregar más opciones aquí
+}

@@ -1,4 +1,5 @@
 Django==5.2.4
-django-cors-headers==4.7.0
 djangorestframework==3.16.0
+django-cors-headers==4.7.0
+drf-spectacular==0.28.0
 pillow==11.3.0
