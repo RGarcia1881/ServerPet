@@ -1,0 +1,4 @@
+Pendiente:
+-Agregar el campo de apellido a usuario
+-Levantar el servidor para acceso remoto sin red local.
+-Reparar levantar el servidor sin 0.0.0.0:8000 para aceptar conexiones
