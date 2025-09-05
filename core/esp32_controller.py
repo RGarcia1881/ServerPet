@@ -4,9 +4,9 @@ import serial
 import time
 
 # Variable de control para alternar entre modo de prueba y modo real
-TEST_MODE = True
+TEST_MODE = False
 
-# --- Modo Real (Comentado para pruebas) ---
+# --- Lógica de Hardware Real ---
 # Configuración del puerto UART
 PUERTO = '/dev/ttyAMA10'
 BAUDRATE = 115200
@@ -21,7 +21,6 @@ def get_serial_connection():
         print(f"Error al conectar con el puerto serial: {e}", file=sys.stderr)
         return None
 
-# Sensores de prueba
 sensores = {
     '1': 'PESO_A',
     '2': 'PESO_B',
@@ -55,6 +54,9 @@ def leer_datos_serial(filtro_etiqueta):
         if not ser:
             return
         try:
+            # Limpia el buffer de entrada para evitar lecturas "residuales"
+            ser.flushInput()
+
             key_to_send = None
             for key, value in sensores.items():
                 if value == filtro_etiqueta:
@@ -123,7 +125,6 @@ def activar_bomba():
             if ser and ser.is_open:
                 ser.close()
 
-# Esta sección permite que el script se ejecute desde la línea de comandos
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print("Uso: python esp32_controller.py <accion> [argumentos]", file=sys.stderr)

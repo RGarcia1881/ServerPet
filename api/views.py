@@ -8,13 +8,23 @@ from .serializers import UserSerializer, PetSerializer, DispenserSerializer
 import subprocess
 import os
 import re
+import sys
 
-# Esta es la ruta a tu script. Asegúrate de ajustarla si tu archivo
-# esp32_controller.py no está en la misma carpeta que manage.py.
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-SCRIPT_PATH = os.path.join(PROJECT_ROOT, 'ServerPet', 'core', 'esp32_controller.py')
+# Esta es la ruta relativa a tu script, basada en la ubicación de este archivo.
+# Se mueve un nivel arriba para salir de la carpeta `api`, luego entra a `core`.
+SCRIPT_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'esp32_controller.py')
 
+# Intenta importar las bibliotecas de DRF y DRF-Spectacular.
+# Si no están instaladas, se genera una excepción que puedes capturar.
+try:
+    from rest_framework import viewsets
+    from rest_framework.response import Response
+    from drf_spectacular.utils import extend_schema
+except ImportError as e:
+    print(f"Error de importación: No se encontraron las bibliotecas de Django REST Framework o drf-spectacular. {e}", file=sys.stderr)
+    raise
 
+# Create your views here.
 @extend_schema(tags=['ESP32 Control'])
 class ESP32ControlViewSet(viewsets.ViewSet):
     """
