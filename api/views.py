@@ -9,6 +9,7 @@ import subprocess
 import os
 import re
 import sys
+import json
 
 # Esta es la ruta relativa a tu script, basada en la ubicación de este archivo.
 # Se mueve un nivel arriba para salir de la carpeta `api`, luego entra a `core`.
@@ -78,6 +79,52 @@ class ESP32ControlViewSet(viewsets.ViewSet):
             return Response({"message": "Comando de activación de bomba enviado.", "salida": result.stdout})
         except subprocess.CalledProcessError as e:
             return Response({"error": f"El script falló: {e.stderr}"}, status=500)
+        except subprocess.TimeoutExpired:
+            return Response({"error": "El script excedió el tiempo de espera."}, status=500)
+        except FileNotFoundError:
+            return Response({"error": "No se encontró el archivo del script."}, status=500)
+
+    @action(detail=False, methods=['post'])
+    def start_calibration(self, request):
+        """
+        Inicia la rutina de calibración para una balanza específica.
+        Espera un cuerpo de solicitud JSON con el campo 'scale' ('A' o 'B').
+        """
+        scale = request.data.get('scale')
+        if not scale or scale.upper() not in ['A', 'B']:
+            return Response({"error": "El campo 'scale' es obligatorio y debe ser 'A' o 'B'."}, status=400)
+        
+        try:
+            command = ['python', SCRIPT_PATH, 'calibrar_balanza', scale.upper()]
+            result = subprocess.run(command, check=True, timeout=15, capture_output=True, text=True)
+            return Response({"message": f"Comando de inicio de calibración para balanza {scale.upper()} enviado.", "salida": result.stdout})
+        except subprocess.CalledProcessError as e:
+            return Response({"error": f"El script de calibración falló: {e.stderr}"}, status=500)
+        except subprocess.TimeoutExpired:
+            return Response({"error": "El script excedió el tiempo de espera."}, status=500)
+        except FileNotFoundError:
+            return Response({"error": "No se encontró el archivo del script."}, status=500)
+
+    @action(detail=False, methods=['post'])
+    def finish_calibration(self, request):
+        """
+        Envía el peso conocido para finalizar la calibración de una balanza.
+        Espera un cuerpo de solicitud JSON con los campos 'scale' y 'knownWeight'.
+        """
+        scale = request.data.get('scale')
+        known_weight = request.data.get('knownWeight')
+
+        if not scale or scale.upper() not in ['A', 'B'] or known_weight is None:
+            return Response({"error": "Los campos 'scale' y 'knownWeight' son obligatorios."}, status=400)
+
+        try:
+            command = ['python', SCRIPT_PATH, 'calibrar_balanza_con_peso', scale.upper(), str(known_weight)]
+            result = subprocess.run(command, check=True, timeout=15, capture_output=True, text=True)
+            
+            # Aquí podrías parsear la salida para obtener el factor de calibración
+            return Response({"message": f"Peso conocido para balanza {scale.upper()} enviado.", "salida": result.stdout})
+        except subprocess.CalledProcessError as e:
+            return Response({"error": f"El script de calibración falló: {e.stderr}"}, status=500)
         except subprocess.TimeoutExpired:
             return Response({"error": "El script excedió el tiempo de espera."}, status=500)
         except FileNotFoundError:
