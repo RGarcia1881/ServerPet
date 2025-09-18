@@ -6,7 +6,7 @@ import json
 import re
 
 # Variable de control para alternar entre modo de prueba y modo real
-TEST_MODE = True
+TEST_MODE = False
 
 # --- Modo Real ---
 # Configuración del puerto UART

@@ -46,6 +46,37 @@ def grabar_video(duracion_segundos, ruta_salida):
     except Exception as e:
         return {"error": f"Ocurrió un error inesperado: {e}"}, False
 
+def reproducir_audio(ruta_archivo):
+    """
+    Reproduce un archivo de audio usando ffplay.
+    """
+    if not os.path.exists(ruta_archivo):
+        return {"error": f"El archivo de audio no se encontró en la ruta: {ruta_archivo}"}, False
+    
+    try:
+        command = [
+            'ffplay',
+            '-nodisp',      # Evita que se abra una ventana.
+            '-autoexit',    # Sale automáticamente cuando la reproducción termina.
+            '-loglevel',    # Establece el nivel de registro.
+            'quiet',
+            ruta_archivo
+        ]
+        
+        # Ejecuta el comando
+        result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=30)
+        
+        return {"message": f"Audio reproducido exitosamente desde: {ruta_archivo}", "detalles": result.stdout}, True
+        
+    except FileNotFoundError:
+        return {"error": "ffplay no está instalado o no se encuentra en el PATH. Asegúrate de tener ffmpeg instalado."}, False
+    except subprocess.CalledProcessError as e:
+        return {"error": "El comando de ffplay falló.", "detalles": e.stderr}, False
+    except subprocess.TimeoutExpired:
+        return {"error": "El comando de reproducción de audio excedió el tiempo de espera."}, False
+    except Exception as e:
+        return {"error": f"Ocurrió un error inesperado: {e}"}, False
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print(json.dumps({"error": "Uso: python raspi_controller.py <accion> [argumentos]"}), file=sys.stderr)
@@ -59,6 +90,15 @@ if __name__ == '__main__':
         ruta_salida = sys.argv[3]
         
         output, success = grabar_video(duracion_segundos, ruta_salida)
+        if success:
+            print(json.dumps(output))
+        else:
+            print(json.dumps(output), file=sys.stderr)
+    elif accion == 'reproducir_audio' and len(sys.argv) == 3:
+        # Se espera: accion, ruta_archivo
+        ruta_archivo = sys.argv[2]
+        
+        output, success = reproducir_audio(ruta_archivo)
         if success:
             print(json.dumps(output))
         else:

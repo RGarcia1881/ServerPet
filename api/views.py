@@ -20,7 +20,6 @@ import threading
 SCRIPT_PATH_ESP32 = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'esp32_controller.py')
 SCRIPT_PATH_RASPI = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'raspi_controller.py')
 
-
 # Intenta importar las bibliotecas de DRF y DRF-Spectacular.
 try:
     from rest_framework import viewsets
@@ -144,7 +143,6 @@ class RaspiControlViewSet(viewsets.ViewSet):
     """
     Un ViewSet para controlar las funciones de la Raspberry Pi.
     """
-    
     @action(detail=False, methods=['get'])
     def stream_video(self, request):
         """
@@ -155,6 +153,11 @@ class RaspiControlViewSet(viewsets.ViewSet):
             camera = cv2.VideoCapture(0)  
             if not camera.isOpened():
                 return
+            
+            # Establece la resolución a 720x720. 
+            # Nota: No todas las cámaras soportan todas las resoluciones.
+            camera.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             
             while True:
                 success, frame = camera.read()
@@ -173,6 +176,47 @@ class RaspiControlViewSet(viewsets.ViewSet):
             camera.release()
         
         return StreamingHttpResponse(generate_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
+    
+    @action(detail=False, methods=['post'])
+    def reproducir_audio(self, request):
+        """
+        Recibe un archivo de audio y lo reproduce en la Raspberry Pi.
+        """
+        # Asegúrate de que el request contenga un archivo de audio
+        if 'audio_file' not in request.FILES:
+            return Response({"error": "No se proporcionó un archivo de audio."}, status=400)
+        
+        audio_file = request.FILES['audio_file']
+        
+        # Define una ruta temporal para guardar el archivo en la Raspberry Pi
+        temp_dir = '/tmp/audio_uploads'
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
+            
+        temp_file_path = os.path.join(temp_dir, audio_file.name)
+        
+        # Guarda el archivo recibido en la ruta temporal
+        try:
+            with open(temp_file_path, 'wb+') as destination:
+                for chunk in audio_file.chunks():
+                    destination.write(chunk)
+        except Exception as e:
+            return Response({"error": f"Error al guardar el archivo temporal: {str(e)}"}, status=500)
+        
+        # Llama al script de la Raspberry Pi para reproducir el audio
+        output, error = run_script(SCRIPT_PATH_RASPI, 'reproducir_audio', temp_file_path)
+        
+        # Opcionalmente, elimina el archivo temporal después de reproducirlo
+        try:
+            os.remove(temp_file_path)
+        except OSError as e:
+            print(f"Error: {e.strerror} - {e.filename}")
+        
+        if error:
+            return Response(error, status=500)
+        
+        return Response(output)
+
 
 @extend_schema(tags=['Usuarios'])
 class UserViewSet(viewsets.ModelViewSet):
