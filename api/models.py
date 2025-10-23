@@ -1,13 +1,17 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+# Importamos el módulo 'json' para el manejo manual en TextField
+import json
 
 # Create your models here.
 
 #User model
 class User(models.Model):
     name = models.CharField(max_length=100)
+    lastname= models.CharField(max_length=100, default='Desconocido') 
     email = models.EmailField(unique=True)
-    password = models.CharField(max_length=128)  # Puedes usar hashing después
+    password = models.CharField(max_length=128)
+    image = models.ImageField(upload_to='users/', null=True, blank=True)
 
     def __str__(self):
         return self.name
@@ -18,7 +22,7 @@ class Pet(models.Model):
     weight = models.FloatField()
     age = models.PositiveIntegerField()
     race = models.CharField(max_length=100)
-    image = models.ImageField(upload_to='pets/', null=True, blank=True)  # ← Campo nuevo
+    image = models.ImageField(upload_to='pets/', null=True, blank=True)
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='pets')
 
     def __str__(self):
@@ -29,7 +33,10 @@ class Pet(models.Model):
 class Dispenser(models.Model):
     ubication = models.CharField(max_length=100)
     status = models.BooleanField(default=False)
-    timetable = models.CharField(max_length=255)
+    
+    # SOLUCIÓN SIMPLE: Usamos TextField. El valor por defecto es la cadena JSON de una lista vacía.
+    # Necesitarás usar json.loads() al leer este campo y json.dumps() al guardarlo.
+    timetable = models.TextField(default='[]', null=True) 
 
     # Componentes físicos
     FC = models.FloatField()  # Food Container
