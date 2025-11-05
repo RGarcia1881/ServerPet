@@ -1,52 +1,67 @@
 from django.db import models
-from django.contrib.auth.models import AbstractUser
-# Importamos el módulo 'json' para el manejo manual en TextField
-import json
+from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
+import json 
+from .managers import CustomUserManager # Importamos el manager personalizado
 
-# Create your models here.
+# --- Modelo User (Usuario Personalizado) ---
+# Heredamos de AbstractBaseUser (para autenticación) y PermissionsMixin (para permisos)
+class User(AbstractBaseUser, PermissionsMixin):
+    # Campos que necesitamos explícitamente:
+    email = models.EmailField(unique=True, verbose_name='Email Address')
+    first_name = models.CharField(max_length=150, blank=True)
+    last_name = models.CharField(max_length=150, blank=True)
+    image = models.ImageField(upload_to='usersImages/', null=True, blank=True)
+    
+    # Campos de AbstractUser que necesitamos redefinir para permisos
+    is_staff = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    date_joined = models.DateTimeField(auto_now_add=True) # Mantenemos para registro de creación
 
-#User model
-class User(models.Model):
+    # Usamos nuestro manager personalizado
+    objects = CustomUserManager() 
+    
+    # Indicamos a Django que use el email como campo de inicio de sesión
+    USERNAME_FIELD = 'email'
+    
+    # Campos que se piden al usar createsuperuser (ya no se pide 'username')
+    REQUIRED_FIELDS = ['first_name', 'last_name']
+    
+    def __str__(self):
+        return self.email
+        
+    # Métodos necesarios para compatibilidad con AbstractUser/Admin
+    def get_full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
+    def get_short_name(self):
+        return self.first_name
+
+# --- Modelo Pet ---
+class Pet(models.Model):
+# ... (Código Pet sin cambios)
     name = models.CharField(max_length=100)
-    lastname= models.CharField(max_length=100, default='Desconocido') 
-    email = models.EmailField(unique=True)
-    password = models.CharField(max_length=128)
-    image = models.ImageField(upload_to='users/', null=True, blank=True)
+    race = models.CharField(max_length=100)
+    weight = models.FloatField()
+    age = models.IntegerField()
+    image = models.ImageField(upload_to='petsImages/', null=True, blank=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='pets')
 
     def __str__(self):
         return self.name
 
-#Pet model    
-class Pet(models.Model):
-    name = models.CharField(max_length=100)
-    weight = models.FloatField()
-    age = models.PositiveIntegerField()
-    race = models.CharField(max_length=100)
-    image = models.ImageField(upload_to='pets/', null=True, blank=True)
-    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='pets')
-
-    def __str__(self):
-        return f"{self.name} ({self.race})"
-
-
-#Dispenser model
+# --- Modelo Dispenser ---
 class Dispenser(models.Model):
-    ubication = models.CharField(max_length=100)
-    status = models.BooleanField(default=False)
+# ... (Código Dispenser sin cambios)
+    ubication = models.CharField(max_length=255)
+    status = models.CharField(max_length=50) # Ejemplo: 'Activo', 'Inactivo'
+    FC = models.IntegerField() # Frecuencia de Comida
+    WC = models.IntegerField() # Peso de Comida
+    FP = models.IntegerField() # Frecuencia de Paseo
+    WP = models.IntegerField() # Peso de Paseo
     
-    # SOLUCIÓN SIMPLE: Usamos TextField. El valor por defecto es la cadena JSON de una lista vacía.
-    # Necesitarás usar json.loads() al leer este campo y json.dumps() al guardarlo.
-    timetable = models.TextField(default='[]', null=True) 
-
-    # Componentes físicos
-    FC = models.FloatField()  # Food Container
-    WC = models.FloatField()  # Water Container
-    FP = models.BooleanField(default=False)  # Food Plate
-    WP = models.BooleanField(default=False)  # Water Plate
-
     # Relaciones
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dispensers')
-    pet = models.ForeignKey(Pet, on_delete=models.CASCADE, related_name='dispensers')
+    pet = models.OneToOneField(Pet, on_delete=models.CASCADE, related_name='dispenser', null=True, blank=True) # Un dispensador por mascota
 
     def __str__(self):
-        return f"Dispenser at {self.ubication} for {self.pet.name}"
+        return f"Dispensador en {self.ubication}"

@@ -4,13 +4,20 @@ import json
 import re
 import subprocess
 from django.shortcuts import render
-from rest_framework import viewsets
+from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
 from .models import User, Pet, Dispenser
 from .serializers import UserSerializer, PetSerializer, DispenserSerializer
 from django.http import StreamingHttpResponse
+
+# --- LIBRERÍAS DE AUTENTICACIÓN ---
+from django.contrib.auth.hashers import make_password, check_password
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
+
+# --- HARDWARE LIBRARIES (MUST BE INSTALLED: pip install opencv-python) ---
 import cv2
 import threading
 
@@ -26,8 +33,11 @@ try:
     from rest_framework.response import Response
     from drf_spectacular.utils import extend_schema
 except ImportError as e:
+    # Este error ya no debería ocurrir si DRF está en settings.py
     print(f"Error de importación: No se encontraron las bibliotecas de Django REST Framework o drf-spectacular. {e}", file=sys.stderr)
     raise
+
+# --- Función Auxiliar para Ejecutar Scripts ---
 
 def run_script(script_path, action_name, *args):
     """
@@ -63,7 +73,8 @@ def run_script(script_path, action_name, *args):
             output = json.loads(result.stdout.strip())
             return output, None
         except json.JSONDecodeError:
-            return None, {"error": "Error de decodificación JSON en la salida.", "detalles": result.stdout.strip()}
+            # Si el script no devuelve JSON (e.g. un mensaje simple), lo encapsulamos
+            return {"message": result.stdout.strip()}, None
 
     except FileNotFoundError:
         return None, {"error": f"No se encontró el archivo del script en la ruta: {script_path}"}
@@ -73,7 +84,70 @@ def run_script(script_path, action_name, *args):
         return None, {"error": f"Ocurrió un error inesperado: {str(e)}"}
 
 
-# Create your views here.
+# --- VISTAS DE AUTENTICACIÓN ---
+
+@extend_schema(tags=['Autenticación'])
+class RegisterView(APIView):
+    """
+    Registra un nuevo usuario, hashea la contraseña y devuelve tokens JWT.
+    """
+    def post(self, request):
+        data = request.data
+        
+        # 1. Hashear la contraseña antes de serializar
+        if 'password' in data:
+            # Reemplaza la contraseña de texto plano con la versión hasheada
+            data['password'] = make_password(data['password'])
+        
+        # 2. Serializar y validar (usando el UserSerializer para los campos)
+        serializer = UserSerializer(data=data)
+        if serializer.is_valid():
+            user = serializer.save()
+            
+            # 3. Generar tokens JWT para el inicio de sesión automático
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'user_id': user.id,
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@extend_schema(tags=['Autenticación'])
+class LoginView(APIView):
+    """
+    Inicia sesión verificando el email y la contraseña, y devuelve tokens JWT.
+    """
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
+        
+        if not email or not password:
+            return Response({"error": "Debe proporcionar email y contraseña."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"error": "Credenciales inválidas."}, status=status.HTTP_401_UNAUTHORIZED)
+        
+        # 1. Verificar la contraseña hasheada
+        if check_password(password, user.password):
+            # 2. Generar tokens JWT
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'user_id': user.id,
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+            })
+        else:
+            return Response({"error": "Credenciales inválidas."}, status=status.HTTP_401_UNAUTHORIZED)
+
+
+# --- VISTAS DE CONTROL DE HARDWARE ---
+
 @extend_schema(tags=['ESP32 Control'])
 class ESP32ControlViewSet(viewsets.ViewSet):
     """
@@ -152,10 +226,11 @@ class RaspiControlViewSet(viewsets.ViewSet):
             # Conecta a la cámara (usualmente /dev/video0)
             camera = cv2.VideoCapture(0)  
             if not camera.isOpened():
+                # En lugar de fallar, podemos devolver un mensaje de error si la cámara no abre
+                print("Error: No se pudo abrir la cámara.", file=sys.stderr)
                 return
             
             # Establece la resolución a 720x720. 
-            # Nota: No todas las cámaras soportan todas las resoluciones.
             camera.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
             camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             
@@ -217,6 +292,8 @@ class RaspiControlViewSet(viewsets.ViewSet):
         
         return Response(output)
 
+
+# --- VISTAS DE MODELOS ---
 
 @extend_schema(tags=['Usuarios'])
 class UserViewSet(viewsets.ModelViewSet):
