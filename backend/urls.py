@@ -13,7 +13,7 @@ urlpatterns = [
     
     # 2. Rutas de la Aplicación 'api'
     # Nota: Se recomienda 'api/' para rutas base, o puedes mantener 'api/v1/' si prefieres versionar.
-    path('api/', include('api.urls')), 
+    path('api/v1/', include('api.urls')), 
     
     # 3. Rutas de Documentación de la API (DRF-Spectacular)
     # Esquema en formato YAML/JSON
