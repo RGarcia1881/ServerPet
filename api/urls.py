@@ -9,7 +9,7 @@ from .views import (
 # Creamos un router para los ViewSets de modelos
 router = DefaultRouter()
 router.register(r'users', UserViewSet)
-router.register(r'pets', PetViewSet)
+router.register(r'pets', PetViewSet, basename='pet')
 router.register(r'dispensers', DispenserViewSet)
 
 # Los ViewSets de control de hardware también usan el router para las acciones

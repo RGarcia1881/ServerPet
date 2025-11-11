@@ -302,8 +302,15 @@ class UserViewSet(viewsets.ModelViewSet):
 
 @extend_schema(tags=['Mascotas'])
 class PetViewSet(viewsets.ModelViewSet):
-    queryset = Pet.objects.all()
     serializer_class = PetSerializer
+    
+    def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return Pet.objects.none()
+        return Pet.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
 @extend_schema(tags=['Dispensadores'])
 class DispenserViewSet(viewsets.ModelViewSet):
