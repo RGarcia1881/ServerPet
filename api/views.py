@@ -8,8 +8,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
-from .models import User, Pet, Dispenser
-from .serializers import UserSerializer, PetSerializer, DispenserSerializer
+from .models import User, Pet, Dispenser, Horario  # 🔥 Agregar Horario
+from .serializers import UserSerializer, PetSerializer, DispenserSerializer, HorarioSerializer  # 🔥 Agregar HorarioSerializer
 from django.http import StreamingHttpResponse
 
 # --- LIBRERÍAS DE AUTENTICACIÓN ---
@@ -22,8 +22,6 @@ import cv2
 import threading
 
 # IMPORTANT: Adjust this path to point to your modified script files.
-# Esta es una forma robusta de manejar rutas relativas en Django.
-# Se mueve dos niveles hacia arriba desde el directorio actual para llegar a la raíz del proyecto.
 SCRIPT_PATH_ESP32 = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'esp32_controller.py')
 SCRIPT_PATH_RASPI = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'raspi_controller.py')
 
@@ -33,7 +31,6 @@ try:
     from rest_framework.response import Response
     from drf_spectacular.utils import extend_schema
 except ImportError as e:
-    # Este error ya no debería ocurrir si DRF está en settings.py
     print(f"Error de importación: No se encontraron las bibliotecas de Django REST Framework o drf-spectacular. {e}", file=sys.stderr)
     raise
 
@@ -46,10 +43,8 @@ def run_script(script_path, action_name, *args):
     """
     try:
         command = [sys.executable, script_path, action_name] + list(args)
-        # Aumenta el timeout para la grabación de video si es necesario
         timeout = 10
         if action_name == 'grabar_video':
-            # Asume que el tercer argumento es la duración en segundos
             try:
                 video_duration = int(args[0])
                 timeout = video_duration + 15
@@ -58,22 +53,17 @@ def run_script(script_path, action_name, *args):
         
         result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
         
-        # Primero, revisamos si hay algo en stderr
         if result.stderr:
             try:
-                # Si el error es un JSON, lo devolvemos
                 error_output = json.loads(result.stderr.strip())
                 return None, error_output
             except json.JSONDecodeError:
-                # Si no es JSON, lo devolvemos como un error de texto simple
                 return None, {"error": "El script falló al ejecutarse.", "detalles": result.stderr.strip()}
 
-        # Ahora intentamos parsear la salida estándar como JSON
         try:
             output = json.loads(result.stdout.strip())
             return output, None
         except json.JSONDecodeError:
-            # Si el script no devuelve JSON (e.g. un mensaje simple), lo encapsulamos
             return {"message": result.stdout.strip()}, None
 
     except FileNotFoundError:
@@ -94,17 +84,13 @@ class RegisterView(APIView):
     def post(self, request):
         data = request.data
         
-        # 1. Hashear la contraseña antes de serializar
         if 'password' in data:
-            # Reemplaza la contraseña de texto plano con la versión hasheada
             data['password'] = make_password(data['password'])
         
-        # 2. Serializar y validar (usando el UserSerializer para los campos)
         serializer = UserSerializer(data=data)
         if serializer.is_valid():
             user = serializer.save()
             
-            # 3. Generar tokens JWT para el inicio de sesión automático
             refresh = RefreshToken.for_user(user)
             
             return Response({
@@ -132,9 +118,7 @@ class LoginView(APIView):
         except User.DoesNotExist:
             return Response({"error": "Credenciales inválidas."}, status=status.HTTP_401_UNAUTHORIZED)
         
-        # 1. Verificar la contraseña hasheada
         if check_password(password, user.password):
-            # 2. Generar tokens JWT
             refresh = RefreshToken.for_user(user)
             
             return Response({
@@ -181,10 +165,6 @@ class ESP32ControlViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'])
     def calibrate_tare(self, request):
-        """
-        Paso 1: Inicia la rutina de calibración tarando la balanza.
-        La balanza debe estar vacía.
-        """
         scale = request.data.get('scale')
         if not scale or scale.upper() not in ['A', 'B']:
             return Response({"error": "El campo 'scale' es obligatorio y debe ser 'A' o 'B'."}, status=400)
@@ -196,10 +176,6 @@ class ESP32ControlViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['post'])
     def calibrate_set_weight(self, request):
-        """
-        Paso 2: Envía el peso conocido para finalizar la calibración.
-        El peso debe estar sobre la balanza.
-        """
         scale = request.data.get('scale')
         known_weight = request.data.get('known_weight')
 
@@ -219,18 +195,12 @@ class RaspiControlViewSet(viewsets.ViewSet):
     """
     @action(detail=False, methods=['get'])
     def stream_video(self, request):
-        """
-        Transmite video en vivo desde la cámara de la Raspberry Pi usando Motion JPEG.
-        """
         def generate_frames():
-            # Conecta a la cámara (usualmente /dev/video0)
             camera = cv2.VideoCapture(0)  
             if not camera.isOpened():
-                # En lugar de fallar, podemos devolver un mensaje de error si la cámara no abre
                 print("Error: No se pudo abrir la cámara.", file=sys.stderr)
                 return
             
-            # Establece la resolución a 720x720. 
             camera.set(cv2.CAP_PROP_FRAME_WIDTH, 720)
             camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
             
@@ -239,12 +209,10 @@ class RaspiControlViewSet(viewsets.ViewSet):
                 if not success:
                     break
                 
-                # Codifica el fotograma como una imagen JPEG
                 ret, buffer = cv2.imencode('.jpg', frame)
                 if not ret:
                     continue
                 
-                # Devuelve el fotograma en formato de bytes
                 yield (b'--frame\r\n'
                        b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
             
@@ -254,23 +222,17 @@ class RaspiControlViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['post'])
     def reproducir_audio(self, request):
-        """
-        Recibe un archivo de audio y lo reproduce en la Raspberry Pi.
-        """
-        # Asegúrate de que el request contenga un archivo de audio
         if 'audio_file' not in request.FILES:
             return Response({"error": "No se proporcionó un archivo de audio."}, status=400)
         
         audio_file = request.FILES['audio_file']
         
-        # Define una ruta temporal para guardar el archivo en la Raspberry Pi
         temp_dir = '/tmp/audio_uploads'
         if not os.path.exists(temp_dir):
             os.makedirs(temp_dir)
             
         temp_file_path = os.path.join(temp_dir, audio_file.name)
         
-        # Guarda el archivo recibido en la ruta temporal
         try:
             with open(temp_file_path, 'wb+') as destination:
                 for chunk in audio_file.chunks():
@@ -278,10 +240,8 @@ class RaspiControlViewSet(viewsets.ViewSet):
         except Exception as e:
             return Response({"error": f"Error al guardar el archivo temporal: {str(e)}"}, status=500)
         
-        # Llama al script de la Raspberry Pi para reproducir el audio
         output, error = run_script(SCRIPT_PATH_RASPI, 'reproducir_audio', temp_file_path)
         
-        # Opcionalmente, elimina el archivo temporal después de reproducirlo
         try:
             os.remove(temp_file_path)
         except OSError as e:
@@ -314,5 +274,58 @@ class PetViewSet(viewsets.ModelViewSet):
 
 @extend_schema(tags=['Dispensadores'])
 class DispenserViewSet(viewsets.ModelViewSet):
-    queryset = Dispenser.objects.all()
     serializer_class = DispenserSerializer
+    
+    def get_queryset(self):
+        if not self.request.user.is_authenticated:
+            return Dispenser.objects.none()
+        return Dispenser.objects.filter(user=self.request.user)
+    
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+@extend_schema(tags=['Horarios'])
+class HorarioViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar horarios de dispensación.
+    """
+    serializer_class = HorarioSerializer
+    
+    def get_queryset(self):
+        """
+        Filtrar horarios por el usuario autenticado
+        """
+        if not self.request.user.is_authenticated:
+            return Horario.objects.none()
+        
+        # 🔥 Ahora podemos filtrar directamente por usuario
+        return Horario.objects.filter(usuario=self.request.user)
+    
+    def perform_create(self, serializer):
+        """
+        Validar que la mascota y dispensador pertenezcan al usuario
+        """
+        mascota = serializer.validated_data.get('mascota')
+        dispensador = serializer.validated_data.get('dispensador')
+        
+        # Verificar que la mascota pertenezca al usuario
+        if mascota.user != self.request.user:
+            raise serializers.ValidationError({
+                'mascota': 'No puedes asignar horarios a mascotas que no te pertenecen'
+            })
+        
+        # Verificar que el dispensador pertenezca al usuario
+        if dispensador and dispensador.user != self.request.user:
+            raise serializers.ValidationError({
+                'dispensador': 'No puedes usar dispensadores que no te pertenecen'
+            })
+        
+        # 🔥 Asignar automáticamente el usuario autenticado
+        serializer.save(usuario=self.request.user)
+    
+    def perform_update(self, serializer):
+        """
+        Mismas validaciones para actualizar
+        """
+        self.perform_create(serializer)

@@ -3,7 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 # Importamos ModelForm, que es más flexible que UserCreationForm para AbstractBaseUser
 from django import forms
 from django.utils.translation import gettext_lazy as _
-from .models import User, Pet, Dispenser
+from .models import User, Pet, Dispenser, Horario
 
 # Paso 1: Crear un formulario de adición basado en Email usando ModelForm
 class UserAdminCreationForm(forms.ModelForm):
@@ -117,3 +117,13 @@ class DispenserAdmin(admin.ModelAdmin):
     # CRÍTICO: Búsqueda por user__email
     search_fields = ('ubication', 'user__email', 'pet__name') 
     ordering = ('id',)
+
+@admin.register(Horario)
+class HorarioAdmin(admin.ModelAdmin):
+    list_display = ['mascota', 'dispensador', 'horarios_display', 'creado_en']
+    list_filter = ['dispensador', 'mascota__user']
+    search_fields = ['mascota__name', 'dispensador__ubication']
+    
+    def horarios_display(self, obj):
+        return ", ".join(obj.horarios) if obj.horarios else "Sin horarios"
+    horarios_display.short_description = 'Horarios'
