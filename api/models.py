@@ -1,4 +1,4 @@
-from django.db import models  # 🔥 ESTA LÍNEA ES ESENCIAL
+from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
@@ -47,11 +47,16 @@ class Pet(models.Model):
 # --- Modelo Dispenser ---
 class Dispenser(models.Model):
     ubication = models.CharField(max_length=255)
-    status = models.CharField(max_length=50)  # Ejemplo: 'Activo', 'Inactivo'
+    
+    # 🔥 CAMBIO: status ahora es BooleanField
+    status = models.BooleanField(default=True)  # True = Activo, False = Inactivo
+    
     FC = models.IntegerField()  # Frecuencia de Comida
     WC = models.IntegerField()  # Peso de Comida
-    FP = models.IntegerField()  # Frecuencia de Paseo
-    WP = models.IntegerField()  # Peso de Paseo
+    
+    # 🔥 CAMBIOS: FP y WP ahora son BooleanField
+    FP = models.BooleanField(default=False)  # Frecuencia de Paseo (True = Habilitado, False = Deshabilitado)
+    WP = models.BooleanField(default=False)  # Peso de Paseo (True = Habilitado, False = Deshabilitado)
     
     # 🔥 NUEVO ATRIBUTO: horarios como JSONField
     horarios = models.JSONField(default=list, blank=True)
@@ -88,8 +93,8 @@ class Horario(models.Model):
         on_delete=models.CASCADE,
         related_name='horarios_usuario',
         verbose_name='Usuario Propietario',
-        null=True,  # 🔥 Temporalmente permitir nulos
-        blank=True  # 🔥 Temporalmente permitir blanco
+        null=True,
+        blank=True
     )
     
     horarios = models.JSONField(
@@ -194,7 +199,7 @@ def asignar_dispensador_automatico(sender, instance, **kwargs):
             Horario.objects.create(
                 mascota=instance,
                 dispensador=dispensador,
-                usuario=instance.user,  # 🔥 Asignar el usuario automáticamente
+                usuario=instance.user,
                 horarios=["08:00", "18:00"]  # Horarios por defecto
             )
             print(f"✅ Horario creado automáticamente para {instance.name}")

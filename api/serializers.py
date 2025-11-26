@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
-from .models import User, Pet, Dispenser, Horario  # 🔥 Agregar Horario
+from .models import User, Pet, Dispenser, Horario
 import json
-import re  # 🔥 Necesario para validar formato de hora
+import re
 
 # --- Serializers Básicos ---
 
@@ -37,7 +37,6 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return super().create(validated_data)
 
-
 # --- Pet Serializer ---
 
 class PetSerializer(serializers.ModelSerializer):
@@ -45,19 +44,67 @@ class PetSerializer(serializers.ModelSerializer):
         model = Pet
         fields = '__all__'
 
-
-# --- Dispenser Serializer (ACTUALIZADO) ---
+# --- Dispenser Serializer (ACTUALIZADO CON CAMPOS BOOLEAN) ---
 
 class DispenserSerializer(serializers.ModelSerializer):
+    # 🔥 NUEVO: Campos booleanos explícitos para mejor manejo en el frontend
+    status_display = serializers.SerializerMethodField(read_only=True)
+    fp_display = serializers.SerializerMethodField(read_only=True)
+    wp_display = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = Dispenser
-        fields = '__all__'
+        fields = [
+            'id',
+            'ubication',
+            'status',           # 🔥 Ahora es BooleanField
+            'status_display',   # 🔥 Campo adicional para display
+            'FC',
+            'WC',
+            'FP',              # 🔥 Ahora es BooleanField  
+            'fp_display',      # 🔥 Campo adicional para display
+            'WP',              # 🔥 Ahora es BooleanField
+            'wp_display',      # 🔥 Campo adicional para display
+            'horarios',
+            'user',
+            'pet'
+        ]
 
-    # 🔥 ACTUALIZAR: Cambiar 'timetable' por 'horarios'
+    def get_status_display(self, obj):
+        """Devuelve 'Activo' o 'Inactivo' para el frontend"""
+        return "Activo" if obj.status else "Inactivo"
+    
+    def get_fp_display(self, obj):
+        """Devuelve 'Habilitado' o 'Deshabilitado' para FP"""
+        return "Habilitado" if obj.FP else "Deshabilitado"
+    
+    def get_wp_display(self, obj):
+        """Devuelve 'Habilitado' o 'Deshabilitado' para WP"""
+        return "Habilitado" if obj.WP else "Deshabilitado"
+
+    # 🔥 ACTUALIZAR: Validación para campos booleanos
+    def validate_status(self, value):
+        """Asegurar que status sea booleano"""
+        if not isinstance(value, bool):
+            raise serializers.ValidationError("El status debe ser verdadero o falso")
+        return value
+
+    def validate_FP(self, value):
+        """Asegurar que FP sea booleano"""
+        if not isinstance(value, bool):
+            raise serializers.ValidationError("FP debe ser verdadero o falso")
+        return value
+
+    def validate_WP(self, value):
+        """Asegurar que WP sea booleano"""
+        if not isinstance(value, bool):
+            raise serializers.ValidationError("WP debe ser verdadero o falso")
+        return value
+
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         
-        # 🔥 CAMBIO: Ahora usamos 'horarios' en lugar de 'timetable'
+        # Manejo de horarios (mantener igual)
         db_horarios = instance.horarios
         
         try:
@@ -71,7 +118,6 @@ class DispenserSerializer(serializers.ModelSerializer):
         return representation
 
     def to_internal_value(self, data):
-        # 🔥 CAMBIO: Ahora usamos 'horarios' en lugar de 'timetable'
         horarios_list = data.get('horarios')
 
         if horarios_list is not None and isinstance(horarios_list, list):
@@ -79,27 +125,34 @@ class DispenserSerializer(serializers.ModelSerializer):
         
         return super().to_internal_value(data)
 
-
-# --- 🔥 NUEVO SERIALIZER: HorarioSerializer ---
+# --- HorarioSerializer (ACTUALIZADO) ---
 
 class HorarioSerializer(serializers.ModelSerializer):
     
     # Campos de solo lectura para mostrar información relacionada
     mascota_nombre = serializers.CharField(source='mascota.name', read_only=True)
     dispensador_ubicacion = serializers.CharField(source='dispensador.ubication', read_only=True)
-    usuario_email = serializers.CharField(source='usuario.email', read_only=True)  # 🔥 Nuevo campo
+    usuario_email = serializers.CharField(source='usuario.email', read_only=True)
+    
+    # 🔥 NUEVO: Campos para mostrar el estado del dispensador como string
+    dispensador_status = serializers.BooleanField(source='dispensador.status', read_only=True)
+    dispensador_status_display = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = Horario
         fields = [
             'id', 
             'mascota', 'mascota_nombre',
-            'dispensador', 'dispensador_ubicacion',
-            'usuario', 'usuario_email',  # 🔥 Agregar usuario
+            'dispensador', 'dispensador_ubicacion', 'dispensador_status', 'dispensador_status_display',
+            'usuario', 'usuario_email',
             'horarios', 
             'creado_en', 'actualizado_en'
         ]
-        read_only_fields = ['creado_en', 'actualizado_en', 'usuario']  # 🔥 usuario es de solo lectura
+        read_only_fields = ['creado_en', 'actualizado_en', 'usuario']
+    
+    def get_dispensador_status_display(self, obj):
+        """Devuelve el status del dispensador como string para display"""
+        return "Activo" if obj.dispensador.status else "Inactivo"
     
     def validate_horarios(self, value):
         """
