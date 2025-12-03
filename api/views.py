@@ -8,8 +8,8 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
-from .models import User, Pet, Dispenser, Horario  # 🔥 Agregar Horario
-from .serializers import UserSerializer, PetSerializer, DispenserSerializer, HorarioSerializer  # 🔥 Agregar HorarioSerializer
+from .models import User, Pet, Dispenser, Horario
+from .serializers import UserSerializer, PetSerializer, DispenserSerializer, HorarioSerializer
 from django.http import StreamingHttpResponse
 
 # --- LIBRERÍAS DE AUTENTICACIÓN ---
@@ -17,7 +17,7 @@ from django.contrib.auth.hashers import make_password, check_password
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-# --- HARDWARE LIBRARIES (MUST BE INSTALLED: pip install opencv-python) ---
+# --- HARDWARE LIBRARIES ---
 import cv2
 import threading
 
@@ -25,17 +25,7 @@ import threading
 SCRIPT_PATH_ESP32 = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'esp32_controller.py')
 SCRIPT_PATH_RASPI = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'core', 'raspi_controller.py')
 
-# Intenta importar las bibliotecas de DRF y DRF-Spectacular.
-try:
-    from rest_framework import viewsets
-    from rest_framework.response import Response
-    from drf_spectacular.utils import extend_schema
-except ImportError as e:
-    print(f"Error de importación: No se encontraron las bibliotecas de Django REST Framework o drf-spectacular. {e}", file=sys.stderr)
-    raise
-
 # --- Función Auxiliar para Ejecutar Scripts ---
-
 def run_script(script_path, action_name, *args):
     """
     Ejecuta un script de Python con los argumentos especificados y
@@ -75,7 +65,6 @@ def run_script(script_path, action_name, *args):
 
 
 # --- VISTAS DE AUTENTICACIÓN ---
-
 @extend_schema(tags=['Autenticación'])
 class RegisterView(APIView):
     """
@@ -131,7 +120,6 @@ class LoginView(APIView):
 
 
 # --- VISTAS DE CONTROL DE HARDWARE ---
-
 @extend_schema(tags=['ESP32 Control'])
 class ESP32ControlViewSet(viewsets.ViewSet):
     """
@@ -254,7 +242,6 @@ class RaspiControlViewSet(viewsets.ViewSet):
 
 
 # --- VISTAS DE MODELOS ---
-
 @extend_schema(tags=['Usuarios'])
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
@@ -269,8 +256,36 @@ class PetViewSet(viewsets.ModelViewSet):
             return Pet.objects.none()
         return Pet.objects.filter(user=self.request.user)
     
+    def get_serializer_context(self):
+        """Agregar request al contexto del serializer"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        """El serializer ya maneja la creación con el contexto"""
+        serializer.save()
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(
+                serializer.data, 
+                status=status.HTTP_201_CREATED, 
+                headers=headers
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            self.perform_update(serializer)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @extend_schema(tags=['Dispensadores'])
 class DispenserViewSet(viewsets.ModelViewSet):
@@ -283,7 +298,6 @@ class DispenserViewSet(viewsets.ModelViewSet):
     
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-
 
 @extend_schema(tags=['Horarios'])
 class HorarioViewSet(viewsets.ModelViewSet):
@@ -299,7 +313,7 @@ class HorarioViewSet(viewsets.ModelViewSet):
         if not self.request.user.is_authenticated:
             return Horario.objects.none()
         
-        # 🔥 Ahora podemos filtrar directamente por usuario
+        # Filtrar directamente por usuario
         return Horario.objects.filter(usuario=self.request.user)
     
     def perform_create(self, serializer):
@@ -321,11 +335,11 @@ class HorarioViewSet(viewsets.ModelViewSet):
                 'dispensador': 'No puedes usar dispensadores que no te pertenecen'
             })
         
-        # 🔥 Asignar automáticamente el usuario autenticado
+        # Asignar automáticamente el usuario autenticado
         serializer.save(usuario=self.request.user)
     
     def perform_update(self, serializer):
         """
         Mismas validaciones para actualizar
         """
-        self.perform_create(serializer) 
+        self.perform_create(serializer)

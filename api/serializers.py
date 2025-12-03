@@ -1,11 +1,13 @@
+import base64
+import uuid
+from django.core.files.base import ContentFile
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 from .models import User, Pet, Dispenser, Horario
 import json
 import re
 
-# --- Serializers Básicos ---
-
+# --- User Serializer ---
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
     
@@ -37,17 +39,153 @@ class UserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         return super().create(validated_data)
 
-# --- Pet Serializer ---
-
+# --- Pet Serializer (ACTUALIZADO PARA MANEJAR BASE64) ---
 class PetSerializer(serializers.ModelSerializer):
+    # 🔥 NUEVO: Campo para recibir imagen en base64 desde el frontend
+    image_base64 = serializers.CharField(
+        write_only=True, 
+        required=False, 
+        allow_blank=True,
+        help_text="Imagen en formato base64. Ej: data:image/jpeg;base64,XXXXX"
+    )
+    
+    # 🔥 NUEVO: Campo para mostrar URL completa de la imagen
+    image_url = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = Pet
-        fields = '__all__'
+        fields = [
+            'id', 
+            'name', 
+            'weight', 
+            'age', 
+            'race', 
+            'image',        # Campo del modelo (solo lectura)
+            'image_url',    # 🔥 NUEVO: URL completa
+            'image_base64', # 🔥 NUEVO: Para recibir base64
+            'user'
+        ]
+        read_only_fields = ['image', 'user', 'image_url']
+    
+    def get_image_url(self, obj):
+        """Obtener URL completa de la imagen"""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
+    def validate(self, data):
+        """Validaciones adicionales"""
+        request = self.context.get('request')
+        
+        # Asegurar que el usuario esté autenticado (para updates)
+        if request and hasattr(self, 'instance') and self.instance:
+            if self.instance.user != request.user:
+                raise serializers.ValidationError("No puedes modificar mascotas de otros usuarios")
+        
+        return data
+    
+    def create(self, validated_data):
+        """Crear mascota con imagen en base64"""
+        # Extraer imagen en base64 si viene
+        image_base64 = validated_data.pop('image_base64', None)
+        
+        # Asignar usuario automáticamente
+        request = self.context.get('request')
+        if request and request.user:
+            validated_data['user'] = request.user
+        
+        # Crear la mascota
+        pet = Pet.objects.create(**validated_data)
+        
+        # Procesar imagen si viene
+        self._process_image(pet, image_base64)
+        
+        return pet
+    
+    def update(self, instance, validated_data):
+        """Actualizar mascota con imagen en base64"""
+        # Extraer imagen en base64 si viene
+        image_base64 = validated_data.pop('image_base64', None)
+        
+        # Actualizar campos normales
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        # Procesar imagen
+        self._process_image(instance, image_base64)
+        
+        instance.save()
+        return instance
+    
+    def _process_image(self, pet, image_base64):
+        """Procesar imagen en base64"""
+        print(f"🔍 [DEBUG] Recibiendo image_base64: {image_base64[:100] if image_base64 else 'None'}")
+        
+        if image_base64 is None:
+            print("🔍 [DEBUG] image_base64 es None, no se procesa")
+            return  # No hacer nada si no viene imagen
+        
+        if image_base64 == '':
+            print("🔍 [DEBUG] image_base64 es string vacío, eliminando imagen")
+            # String vacío = eliminar imagen existente
+            if pet.image:
+                pet.image.delete(save=False)
+            pet.image = None
+        elif image_base64.startswith('data:image'):
+            try:
+                print("🔍 [DEBUG] Procesando imagen base64...")
+                # Decodificar base64
+                format, imgstr = image_base64.split(';base64,')
+                ext = format.split('/')[-1]  # jpeg, png, etc.
+                
+                print(f"🔍 [DEBUG] Formato: {format}, Extensión: {ext}")
+                
+                # Generar nombre único para el archivo
+                filename = f"pet_{pet.id}_{uuid.uuid4().hex[:8]}.{ext}"
+                print(f"🔍 [DEBUG] Nombre archivo: {filename}")
+                
+                # Decodificar base64 a bytes
+                image_bytes = base64.b64decode(imgstr)
+                print(f"🔍 [DEBUG] Tamaño imagen: {len(image_bytes)} bytes")
+                
+                # Crear archivo de contenido
+                data = ContentFile(image_bytes, name=filename)
+                
+                # Eliminar imagen anterior si existe
+                if pet.image:
+                    print(f"🔍 [DEBUG] Eliminando imagen anterior: {pet.image.name}")
+                    pet.image.delete(save=False)
+                
+                # Guardar nueva imagen
+                print(f"🔍 [DEBUG] Guardando nueva imagen...")
+                pet.image.save(filename, data, save=False)
+                print(f"✅ [DEBUG] Imagen guardada exitosamente: {pet.image.name}")
+                
+            except Exception as e:
+                print(f"❌ [DEBUG] Error procesando imagen base64: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"⚠️ [DEBUG] Formato de imagen no válido: {image_base64[:100]}...")
+        
+    def to_representation(self, instance):
+        """Personalizar representación para el frontend"""
+        representation = super().to_representation(instance)
+        
+        # Mantener compatibilidad: también incluir 'image' como URL
+        if 'image_url' in representation and representation['image_url']:
+            representation['image'] = representation['image_url']
+        else:
+            representation['image'] = None
+        
+        return representation
 
 # --- Dispenser Serializer (ACTUALIZADO CON CAMPOS BOOLEAN) ---
-
 class DispenserSerializer(serializers.ModelSerializer):
-    # 🔥 NUEVO: Campos booleanos explícitos para mejor manejo en el frontend
+    # Campos booleanos explícitos para mejor manejo en el frontend
     status_display = serializers.SerializerMethodField(read_only=True)
     fp_display = serializers.SerializerMethodField(read_only=True)
     wp_display = serializers.SerializerMethodField(read_only=True)
@@ -57,14 +195,14 @@ class DispenserSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'ubication',
-            'status',           # 🔥 Ahora es BooleanField
-            'status_display',   # 🔥 Campo adicional para display
+            'status',           # BooleanField
+            'status_display',   # Campo adicional para display
             'FC',
             'WC',
-            'FP',              # 🔥 Ahora es BooleanField  
-            'fp_display',      # 🔥 Campo adicional para display
-            'WP',              # 🔥 Ahora es BooleanField
-            'wp_display',      # 🔥 Campo adicional para display
+            'FP',              # BooleanField  
+            'fp_display',      # Campo adicional para display
+            'WP',              # BooleanField
+            'wp_display',      # Campo adicional para display
             'horarios',
             'user',
             'pet'
@@ -82,7 +220,7 @@ class DispenserSerializer(serializers.ModelSerializer):
         """Devuelve 'Habilitado' o 'Deshabilitado' para WP"""
         return "Habilitado" if obj.WP else "Deshabilitado"
 
-    # 🔥 ACTUALIZAR: Validación para campos booleanos
+    # Validación para campos booleanos
     def validate_status(self, value):
         """Asegurar que status sea booleano"""
         if not isinstance(value, bool):
@@ -104,7 +242,7 @@ class DispenserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         
-        # Manejo de horarios (mantener igual)
+        # Manejo de horarios
         db_horarios = instance.horarios
         
         try:
@@ -126,7 +264,6 @@ class DispenserSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
 # --- HorarioSerializer (ACTUALIZADO) ---
-
 class HorarioSerializer(serializers.ModelSerializer):
     
     # Campos de solo lectura para mostrar información relacionada
@@ -134,7 +271,7 @@ class HorarioSerializer(serializers.ModelSerializer):
     dispensador_ubicacion = serializers.CharField(source='dispensador.ubication', read_only=True)
     usuario_email = serializers.CharField(source='usuario.email', read_only=True)
     
-    # 🔥 NUEVO: Campos para mostrar el estado del dispensador como string
+    # Campos para mostrar el estado del dispensador como string
     dispensador_status = serializers.BooleanField(source='dispensador.status', read_only=True)
     dispensador_status_display = serializers.SerializerMethodField(read_only=True)
     
@@ -186,7 +323,7 @@ class HorarioSerializer(serializers.ModelSerializer):
                     'mascota': 'Esta mascota no tiene un dispensador asignado'
                 })
         
-        # 🔥 Asignar automáticamente el usuario de la mascota
+        # Asignar automáticamente el usuario de la mascota
         if mascota and not data.get('usuario'):
             data['usuario'] = mascota.user
         
