@@ -7,9 +7,20 @@ from .models import User, Pet, Dispenser, Horario
 import json
 import re
 
-# --- User Serializer ---
+# --- User Serializer (ACTUALIZADO PARA MANEJAR IMÁGENES) ---
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+    password = serializers.CharField(write_only=True, required=False)
+    
+    # 🔥 NUEVO: Campo para recibir imagen en base64 (igual que en PetSerializer)
+    image_base64 = serializers.CharField(
+        write_only=True, 
+        required=False, 
+        allow_blank=True,
+        help_text="Imagen en formato base64. Ej: data:image/jpeg;base64,XXXXX"
+    )
+    
+    # 🔥 NUEVO: Campo para mostrar URL completa de la imagen
+    image_url = serializers.SerializerMethodField(read_only=True)
     
     class Meta:
         model = User
@@ -18,8 +29,13 @@ class UserSerializer(serializers.ModelSerializer):
             'email', 
             'first_name', 
             'last_name', 
-            'image', 
-            'password' 
+            'image',        # Campo del modelo (solo lectura)
+            'image_url',    # 🔥 NUEVO: URL completa
+            'image_base64', # 🔥 NUEVO: Para recibir base64
+            'password',
+            'date_joined',
+            'is_active',
+            'is_staff'
         )
         
         extra_kwargs = {
@@ -33,11 +49,117 @@ class UserSerializer(serializers.ModelSerializer):
                     )
                 ]
             },
-            'password': {'write_only': True} 
+            'password': {'write_only': True, 'required': False},
+            'image': {'read_only': True},  # Hacer que image sea solo lectura
+            'date_joined': {'read_only': True},
+            'is_active': {'read_only': True},
+            'is_staff': {'read_only': True}
         }
-
+    
+    def get_image_url(self, obj):
+        """Obtener URL completa de la imagen (igual que en PetSerializer)"""
+        if obj.image:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+    
     def create(self, validated_data):
-        return super().create(validated_data)
+        """Crear usuario con imagen en base64"""
+        # Extraer imagen en base64 si viene
+        image_base64 = validated_data.pop('image_base64', None)
+        
+        # Crear el usuario
+        user = User.objects.create(**validated_data)
+        
+        # Procesar imagen si viene
+        self._process_image(user, image_base64)
+        
+        return user
+    
+    def update(self, instance, validated_data):
+        """Actualizar usuario con imagen en base64"""
+        # Extraer imagen en base64 si viene
+        image_base64 = validated_data.pop('image_base64', None)
+        
+        # Extraer password si viene (solo para actualización)
+        password = validated_data.pop('password', None)
+        if password:
+            instance.set_password(password)
+        
+        # Actualizar campos normales
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        # Procesar imagen
+        self._process_image(instance, image_base64)
+        
+        instance.save()
+        return instance
+    
+    def _process_image(self, user, image_base64):
+        """Procesar imagen en base64 (igual que en PetSerializer)"""
+        print(f"🔍 [DEBUG User] Recibiendo image_base64: {image_base64[:100] if image_base64 else 'None'}")
+        
+        if image_base64 is None:
+            print("🔍 [DEBUG User] image_base64 es None, no se procesa")
+            return  # No hacer nada si no viene imagen
+        
+        if image_base64 == '':
+            print("🔍 [DEBUG User] image_base64 es string vacío, eliminando imagen")
+            # String vacío = eliminar imagen existente
+            if user.image:
+                user.image.delete(save=False)
+            user.image = None
+        elif image_base64.startswith('data:image'):
+            try:
+                print("🔍 [DEBUG User] Procesando imagen base64...")
+                # Decodificar base64
+                format, imgstr = image_base64.split(';base64,')
+                ext = format.split('/')[-1]  # jpeg, png, etc.
+                
+                print(f"🔍 [DEBUG User] Formato: {format}, Extensión: {ext}")
+                
+                # Generar nombre único para el archivo
+                filename = f"user_{user.id}_{uuid.uuid4().hex[:8]}.{ext}"
+                print(f"🔍 [DEBUG User] Nombre archivo: {filename}")
+                
+                # Decodificar base64 a bytes
+                image_bytes = base64.b64decode(imgstr)
+                print(f"🔍 [DEBUG User] Tamaño imagen: {len(image_bytes)} bytes")
+                
+                # Crear archivo de contenido
+                data = ContentFile(image_bytes, name=filename)
+                
+                # Eliminar imagen anterior si existe
+                if user.image:
+                    print(f"🔍 [DEBUG User] Eliminando imagen anterior: {user.image.name}")
+                    user.image.delete(save=False)
+                
+                # Guardar nueva imagen
+                print(f"🔍 [DEBUG User] Guardando nueva imagen...")
+                user.image.save(filename, data, save=False)
+                print(f"✅ [DEBUG User] Imagen guardada exitosamente: {user.image.name}")
+                
+            except Exception as e:
+                print(f"❌ [DEBUG User] Error procesando imagen base64: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"⚠️ [DEBUG User] Formato de imagen no válido: {image_base64[:100]}...")
+    
+    def to_representation(self, instance):
+        """Personalizar representación para el frontend"""
+        representation = super().to_representation(instance)
+        
+        # Mantener compatibilidad: también incluir 'image' como URL
+        if 'image_url' in representation and representation['image_url']:
+            representation['image'] = representation['image_url']
+        else:
+            representation['image'] = None
+        
+        return representation
 
 # --- Pet Serializer (ACTUALIZADO PARA MANEJAR BASE64) ---
 class PetSerializer(serializers.ModelSerializer):

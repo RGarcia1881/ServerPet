@@ -150,6 +150,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = True
 
+
 # DRF Spectacular Settings
 SPECTACULAR_SETTINGS = {
     'TITLE': 'API Dispensador de Mascotas',

@@ -4,7 +4,7 @@ import json
 import re
 import subprocess
 from django.shortcuts import render
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from drf_spectacular.utils import extend_schema
@@ -244,8 +244,106 @@ class RaspiControlViewSet(viewsets.ViewSet):
 # --- VISTAS DE MODELOS ---
 @extend_schema(tags=['Usuarios'])
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
+    """
+    ViewSet para gestionar usuarios.
+    Por seguridad, los usuarios solo pueden ver/editar su propio perfil.
+    """
     serializer_class = UserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get_queryset(self):
+        """
+        Usuarios normales solo pueden acceder a su propio perfil.
+        Staff/Superusers pueden ver todos los usuarios.
+        """
+        user = self.request.user
+        if user.is_staff or user.is_superuser:
+            return User.objects.all()
+        return User.objects.filter(id=user.id)  # Solo su propio usuario
+    
+    def get_serializer_context(self):
+        """Agregar request al contexto del serializer para manejar imágenes"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    def create(self, request, *args, **kwargs):
+        """
+        Crear usuario. Solo disponible para admin/staff.
+        Para registro normal usar /api/auth/register/
+        """
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response(
+                {"error": "No tienes permisos para crear usuarios"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(
+                serializer.data, 
+                status=status.HTTP_201_CREATED, 
+                headers=headers
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def update(self, request, *args, **kwargs):
+        """
+        Actualizar usuario. 
+        Usuarios normales solo pueden actualizar su propio perfil.
+        """
+        instance = self.get_object()
+        
+        # Verificar permisos
+        if instance != request.user and not request.user.is_staff and not request.user.is_superuser:
+            return Response(
+                {"error": "No puedes editar el perfil de otro usuario"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        partial = kwargs.pop('partial', False)
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if serializer.is_valid():
+            self.perform_update(serializer)
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Eliminar usuario.
+        Solo admin/staff pueden eliminar usuarios.
+        """
+        if not request.user.is_staff and not request.user.is_superuser:
+            return Response(
+                {"error": "No tienes permisos para eliminar usuarios"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        return super().destroy(request, *args, **kwargs)
+    
+    @action(detail=False, methods=['get', 'put', 'patch'])
+    def me(self, request):
+        """
+        Endpoint especial para el perfil del usuario autenticado.
+        GET: Obtener perfil
+        PUT/PATCH: Actualizar perfil
+        """
+        user = request.user
+        
+        if request.method == 'GET':
+            serializer = self.get_serializer(user)
+            return Response(serializer.data)
+        
+        elif request.method in ['PUT', 'PATCH']:
+            partial = request.method == 'PATCH'
+            serializer = self.get_serializer(user, data=request.data, partial=partial)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 @extend_schema(tags=['Mascotas'])
 class PetViewSet(viewsets.ModelViewSet):
