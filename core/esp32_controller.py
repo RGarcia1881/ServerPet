@@ -41,9 +41,11 @@ def leer_datos_serial(filtro_etiqueta):
         elif filtro_etiqueta == 'PESO_B':
             valor_final = f"{random.randint(10, 50)} g"
         elif filtro_etiqueta == 'DISTANCIA_A':
-            valor_final = f"{random.randint(20, 100)} cm"
+            # Solo valores entre 2 y 7 cm para modo de prueba
+            valor_final = f"{random.randint(2, 7)} cm"
         elif filtro_etiqueta == 'DISTANCIA_B':
-            valor_final = f"{random.randint(5, 30)} cm"
+            # Solo valores entre 2 y 7 cm para modo de prueba
+            valor_final = f"{random.randint(2, 7)} cm"
         else:
             print(json.dumps({"error": f"Sensor '{filtro_etiqueta}' no reconocido."}), file=sys.stderr)
             return

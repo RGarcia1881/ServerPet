@@ -306,6 +306,8 @@ class PetSerializer(serializers.ModelSerializer):
         return representation
 
 # --- Dispenser Serializer (ACTUALIZADO CON CAMPOS BOOLEAN) ---
+
+# --- Dispenser Serializer (ACTUALIZADO CON CAMPOS BOOLEAN) ---
 class DispenserSerializer(serializers.ModelSerializer):
     # Campos booleanos explícitos para mejor manejo en el frontend
     status_display = serializers.SerializerMethodField(read_only=True)
@@ -364,15 +366,27 @@ class DispenserSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         representation = super().to_representation(instance)
         
-        # Manejo de horarios
+        # Manejo robusto de horarios
         db_horarios = instance.horarios
         
         try:
-            if db_horarios and db_horarios != 'null':
-                representation['horarios'] = json.loads(db_horarios)
+            if db_horarios:
+                # Si ya es una lista, úsala directamente
+                if isinstance(db_horarios, list):
+                    representation['horarios'] = db_horarios
+                # Si es una cadena, intenta parsearla como JSON
+                elif isinstance(db_horarios, str):
+                    if db_horarios.strip() == 'null' or db_horarios.strip() == '':
+                        representation['horarios'] = []
+                    else:
+                        representation['horarios'] = json.loads(db_horarios)
+                # Para cualquier otro tipo, establecer lista vacía
+                else:
+                    representation['horarios'] = []
             else:
                 representation['horarios'] = []
-        except json.JSONDecodeError:
+                
+        except (json.JSONDecodeError, TypeError):
             representation['horarios'] = []
             
         return representation
@@ -380,8 +394,17 @@ class DispenserSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data):
         horarios_list = data.get('horarios')
 
-        if horarios_list is not None and isinstance(horarios_list, list):
-            data['horarios'] = json.dumps(horarios_list)
+        if horarios_list is not None:
+            if isinstance(horarios_list, list):
+                data['horarios'] = json.dumps(horarios_list)
+            elif isinstance(horarios_list, str):
+                # Si ya es string, verificar si es JSON válido
+                try:
+                    json.loads(horarios_list)
+                    data['horarios'] = horarios_list  # Ya es JSON válido
+                except json.JSONDecodeError:
+                    # Si no es JSON válido, convertirlo
+                    data['horarios'] = json.dumps([horarios_list])
         
         return super().to_internal_value(data)
 
